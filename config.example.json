@@ -1,0 +1,15 @@
+{
+    "balkaniyum": {
+        "username": "USERNAME",
+        "password": "PASSWORD"
+    },
+    "logger": {
+        "level": "INFO",
+        "syslogType": "local",
+        "syslogAddress": "/dev/log",
+        "syslogPort": 514
+    },
+    "browser": {
+        "headless": true
+    }
+}
