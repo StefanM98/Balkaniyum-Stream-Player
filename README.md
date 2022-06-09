@@ -25,6 +25,7 @@ I decided to write a custom player for Balkaniyum that is intentionally simplist
 | Scroll-Down | Decrease volume (5%) |
 | Left Click | Previous channel |
 | Right Click | Next channel |
+| f | Toggle fullscreen |
 
 ## Requirements
 - Python 3.6+
