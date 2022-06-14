@@ -1,7 +1,8 @@
 {
     "balkaniyum": {
         "username": "USERNAME",
-        "password": "PASSWORD"
+        "password": "PASSWORD",
+        "startChannel": "RTRS"
     },
     "logger": {
         "level": "INFO",
