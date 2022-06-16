@@ -347,12 +347,13 @@ key_listener.daemon = True
 mouse_listener.daemon = True
 
 # Start VLC instance
-instance = vlc.Instance("--sub-source=marq --video-title-show --video-title-timeout 1")
+instance = vlc.Instance("--intf rc --rc-host 127.0.0.1:44500 --video-on-top --mouse-hide-timeout=0 --sub-source=marq --video-title-show --video-title-timeout 1")
 player = instance.media_player_new()
 player.video_set_marquee_int(vlc.VideoMarqueeOption.Position, 6)
 player.video_set_marquee_int(vlc.VideoMarqueeOption.Timeout, 6*1000)
 player.video_set_marquee_int(vlc.VideoMarqueeOption.Size, 64)
 player.toggle_fullscreen()
+player.video_set_mouse_input(False)
 
 # Authenticate and get the session cookie
 browser.get(loginUrl)
