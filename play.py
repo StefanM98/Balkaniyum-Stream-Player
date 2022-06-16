@@ -40,6 +40,12 @@ def exit_program():
     logger.debug("Exiting...")
     sys.exit(0)
 
+def redirect_to_logger(logger, object):
+    # Redirect stdout and stderr to the logger
+    logger.debug("Redirecting stdout and stderr to the logger")
+    sys.stdout = logger
+    sys.stderr = logger
+
 loginUrl = "https://www.balkaniyum.tv/srpski/tv/tvuzivo.shtml"
 playUrl = "http://www.balkaniyum.tv/srpski/tv/tvkanal_"
 
@@ -100,6 +106,7 @@ options.headless = headless
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-gpu")
 options.add_argument("--disable-software-rasterizer")
+options.add_experimental_option("excludeSwitches", ["enable-logging"])
 
 service = Service(ChromeDriverManager().install())
 browser = webdriver.Chrome(service = service, options = options)
@@ -108,18 +115,43 @@ def play_channel(chanel_index):
     global player
     global channels
 
+    channelName = channels[chanel_index]
+
     player.video_set_marquee_string(vlc.VideoMarqueeOption.Text, "LOADING...")
 
     is_set = set_channel(chanel_index)
-    logger.debug("Playing stream " + channels[chanel_index])
+    logger.debug("Playing stream " + channelName)
     if is_set:
         status = player.play()
         if status == -1:
             logger.error("Error playing Stream")
-            player.video_set_marquee_string(vlc.VideoMarqueeOption.Text, "ERROR")
+        else:
+            channel_title = "{} ({}/{})".format(channelName, chanel_index + 1, len(channels))
+            player.video_set_marquee_string(vlc.VideoMarqueeOption.Text, channel_title)
+            return True
     else:
-        logger.error("Failed to set media for channel " + channels[chanel_index])
-        player.video_set_marquee_string(vlc.VideoMarqueeOption.Text, "ERROR")
+        logger.error("Failed to set media for channel " + channelName)
+        
+    return False
+
+
+def try_channel(channel_index):
+    # Try to play_channel(channel_index) 3 times
+    for i in range(4):
+        if play_channel(channel_index):
+            return True
+        else:
+            logger.warning("Failed to play channel " + channels[channel_index])
+            logger.warning("{0} attemps left".format(3 - i))
+
+    # If we failed to play a channel 3 times, reload all channels and try again
+    if i == 3:
+        logger.error("Failed to play channel " + channels[channel_index])
+        logger.info("Reloading available channels...")
+        player.video_set_marquee_string(vlc.VideoMarqueeOption.Text, "LOADING...")
+        load_channels()
+        try_channel(channel_index)
+
 
 def get_channel_link(channel_name):
     # Get the link for the channel
@@ -129,33 +161,33 @@ def load_channels():
     global browser
     global fetched_channels
 
+    channelNames = []
+
     logger.info("Loading channels...")
     # try to load channels from the debug file
     try:
         with open('channels.json') as f:
-            all_channels = json.load(f)
-            logger.info("Loaded {0} channels from file.".format(len(all_channels)))
-            return all_channels
+            channelNames = json.load(f)
+            logger.info("Loaded {0} channels from file.".format(len(channelNames)))
     except Exception as e:
         logger.warning("Failed to load channels file: " + str(e))
 
-    browser.implicitly_wait(30)
-    channel_list = browser.find_element(by = By.ID, value = "channels")
-    channelContainers = channel_list.find_elements(by = By.CLASS_NAME, value = "channel")
-    browser.implicitly_wait(30)
+    if len(channelNames) == 0:
+        browser.implicitly_wait(30)
+        channel_list = browser.find_element(by = By.ID, value = "channels")
+        channelContainers = channel_list.find_elements(by = By.CLASS_NAME, value = "channel")
+        browser.implicitly_wait(30)
 
-    channelNames = []
+        for container in channelContainers:
+            # Get the channel name from id
+            channelName = container.get_attribute("id")  
 
-    for container in channelContainers:
-        # Get the channel name from id
-        channelName = container.get_attribute("id")  
+            # Only include live channels (without _NUM suffix)
+            if channelName.endswith(("_6", "_9", "_16")):
+                continue
 
-        # Only include live channels (without _NUM suffix)
-        if channelName.endswith(("_6", "_9", "_16")):
-            continue
-
-        # Remove the "channel_" prefix and _0 suffix if present
-        channelNames.append(channelName[8:].replace("_0", "")) 
+            # Remove the "channel_" prefix and _0 suffix if present
+            channelNames.append(channelName[8:].replace("_0", "")) 
 
     logger.info(
         "Loaded {0} channels. Checking availability..."
@@ -240,12 +272,9 @@ def set_channel(chanel_index):
         logger.debug("STREAM URL: " + url)
         media = instance.media_new(str(url))
         player.set_media(media)
-        channel_title = "{} ({}/{})".format(channelName, chanel_index + 1, len(channels))
-        player.video_set_marquee_string(vlc.VideoMarqueeOption.Text, channel_title)
         return True
     else:
         logger.error("Failed to get URL for channel stream: " + channels[chanel_index])
-        player.video_set_marquee_string(vlc.VideoMarqueeOption.Text, "ERROR")
         
         # Clear the channel from fetched_channels
         if channelName in fetched_channels:
@@ -289,7 +318,7 @@ def next_channel():
     else:
         channel_index += 1
 
-    play_channel(channel_index)
+    try_channel(channel_index)
 
 
 def prev_channel():
@@ -302,7 +331,7 @@ def prev_channel():
     else:
         channel_index -= 1
 
-    play_channel(channel_index)
+    try_channel(channel_index)
 
 def volume_up():
     # Increase the volume
@@ -313,20 +342,23 @@ def volume_down():
     player.audio_set_volume(max(player.audio_get_volume() - 5, 0))
 
 
+def is_loading():
+    # Check if the player is loading a video
+    return player.video_get_marquee_string(vlc.VideoMarqueeOption.Text) == "LOADING..."
 
 # Event handlers
 def on_click(x, y, button, pressed):
-    if pressed and button == Button.left: # left click
+    if not is_loading() and pressed and button == Button.left: # left click
         logger.debug("Getting next channel...")
         next_channel()
-    elif pressed and button == Button.right: # right click
+    elif not is_loading() and pressed and button == Button.right: # right click
         logger.debug("Getting previous channel...")
         prev_channel()
 
 def on_scroll(x, y, dx, dy):
-    if dy > 0:
+    if not is_loading() and dy > 0:
         volume_up()
-    else:
+    elif not is_loading():
         volume_down()
 
 def on_key_release(key):
@@ -370,9 +402,8 @@ try:
     channel_index = channels.index(startChannel)
 except ValueError:
     logger.error("Failed to find the start channel: " + str(startChannel))
-    player.video_set_marquee_string(vlc.VideoMarqueeOption.Text, "ERROR")
 lastState = player.get_state()
-play_channel(channel_index)
+try_channel(channel_index)
 
 # Start the event listeners
 key_listener.start()
